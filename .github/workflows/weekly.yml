@@ -1,0 +1,67 @@
+name: Namsi Weekly Scanner
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 매주 월요일 09:20 한국시간
+    - cron: "20 0 * * 1"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Run scanner
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scanner.py
+
+      - name: Save results
+        run: |
+          git config user.name "namsi-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add reports state
+          git diff --cached --quiet || git commit -m "weekly scan"
+          git push
+
+      - name: Prepare website
+        run: |
+          mkdir -p public
+          cp reports/latest.html public/index.html
+          cp reports/*.csv public/ || true
+
+      - name: Upload website
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: scan
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
